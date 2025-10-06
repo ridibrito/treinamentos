@@ -12,8 +12,11 @@ import {
   Play,
   ArrowLeft,
   FileText,
-  Download
+  Download,
+  Award
 } from 'lucide-react'
+import { useState } from 'react'
+import { useToast } from '@/components/ui/Toast'
 
 interface TreinamentoContentProps {
   profile: any
@@ -29,6 +32,8 @@ export function TreinamentoContent({
   apostila
 }: TreinamentoContentProps) {
   const router = useRouter()
+  const toast = useToast()
+  const [gerandoCertificado, setGerandoCertificado] = useState(false)
   
   const isModuloConcluido = (moduloId: string) => {
     return progresso.some(p => p.modulo_id === moduloId && p.concluido)
@@ -37,6 +42,42 @@ export function TreinamentoContent({
   const modulosConcluidos = progresso.filter(p => p.concluido).length
   const totalModulos = treinamento.modulos.length
   const progressoPerc = totalModulos > 0 ? Math.round((modulosConcluidos / totalModulos) * 100) : 0
+  const treinamentoConcluido = progressoPerc === 100
+  
+  const handleGerarCertificado = async () => {
+    setGerandoCertificado(true)
+    
+    try {
+      const response = await fetch('/api/certificados/gerar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ treinamentoId: treinamento.id })
+      })
+      
+      const data = await response.json()
+      
+      if (!response.ok) {
+        toast.error('Não elegível', data.motivo || data.error)
+        return
+      }
+      
+      if (data.jaExistia) {
+        toast.info('Certificado já existe!', 'Redirecionando...')
+      } else {
+        toast.success('Certificado gerado!', 'Parabéns pela conclusão!')
+      }
+      
+      setTimeout(() => {
+        router.push(`/certificados/${treinamento.id}`)
+      }, 1500)
+      
+    } catch (error) {
+      console.error('Erro ao gerar certificado:', error)
+      toast.error('Erro', 'Não foi possível gerar o certificado')
+    } finally {
+      setGerandoCertificado(false)
+    }
+  }
   
   return (
     <AppLayout user={profile}>
@@ -107,9 +148,41 @@ export function TreinamentoContent({
               </p>
             </div>
             
+            {/* Certificado - Aparece quando 100% concluído */}
+            {treinamentoConcluido && (
+              <div className="mt-6 pt-6 border-t border-border">
+                <div className="bg-gradient-to-r from-green-50 to-blue-50 border-2 border-green-200 rounded-lg p-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-emerald-600 rounded-full flex items-center justify-center shadow-lg">
+                        <Award className="w-8 h-8 text-white" />
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold text-gray-900 mb-1">
+                          🎉 Parabéns! Você concluiu este treinamento!
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          Gere seu certificado de conclusão agora
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <Button
+                      onClick={handleGerarCertificado}
+                      disabled={gerandoCertificado}
+                      className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
+                    >
+                      <Award className="w-4 h-4 mr-2" />
+                      {gerandoCertificado ? 'Gerando...' : 'Gerar Certificado'}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+            
             {/* Botão da Apostila */}
             {apostila && (
-              <div className="mt-6 pt-6 border-t border-border">
+              <div className={`mt-6 ${!treinamentoConcluido ? 'pt-6 border-t border-border' : ''}`}>
                 <div className="flex flex-col sm:flex-row gap-3">
                   <Button
                     variant="outline"

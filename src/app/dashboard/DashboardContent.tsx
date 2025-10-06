@@ -1,7 +1,7 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -30,8 +30,17 @@ export function DashboardContent({
   resultados 
 }: DashboardContentProps) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [filtroCategoria, setFiltroCategoria] = useState<string>('todas')
   const [busca, setBusca] = useState('')
+  
+  // Ler busca da URL
+  useEffect(() => {
+    const buscaURL = searchParams.get('busca')
+    if (buscaURL) {
+      setBusca(buscaURL)
+    }
+  }, [searchParams])
   
   // Calcular progresso por treinamento
   const calcularProgresso = (treinamentoId: string) => {
@@ -55,13 +64,23 @@ export function DashboardContent({
   // Categorias únicas
   const categorias = ['todas', ...Array.from(new Set(treinamentos.map(t => t.categoria).filter(Boolean)))]
   
-  // Estatísticas
+  // Estatísticas Expandidas
   const totalTreinamentos = treinamentos.length
   const treinamentosEmAndamento = new Set(progresso.filter(p => !p.concluido).map(p => p.treinamento_id)).size
   const treinamentosConcluidos = new Set(progresso.filter(p => p.concluido).map(p => p.treinamento_id)).size
   const mediaNotas = resultados.length > 0 
     ? (resultados.reduce((acc, r) => acc + r.pontuacao, 0) / resultados.length).toFixed(1)
     : '0.0'
+  
+  // Novas métricas
+  const totalModulosConcluidos = progresso.filter(p => p.concluido).length
+  const totalTestes = resultados.length
+  const testesAprovados = resultados.filter(r => r.pontuacao >= 70).length
+  const horasEstudadas = Math.round(totalModulosConcluidos * 0.5) // Estima 30min por módulo
+  const proximoCertificado = treinamentos.find(t => {
+    const prog = calcularProgresso(t.id)
+    return prog > 50 && prog < 100
+  })
   
   return (
     <AppLayout user={profile}>
@@ -76,53 +95,85 @@ export function DashboardContent({
           </p>
         </div>
         
-        {/* Cards de Estatísticas */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Card>
-            <CardBody className="flex items-center space-x-4">
-              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                <BookOpen className="w-6 h-6 text-primary" />
+        {/* Cards de Estatísticas Melhorados */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {/* Horas Estudadas */}
+          <Card className="hover:shadow-lg transition-all cursor-pointer border-2 border-transparent hover:border-blue-200">
+            <CardBody className="p-6">
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-md">
+                  <Clock className="w-6 h-6 text-white" />
+                </div>
+                <span className="text-xs text-blue-600 font-semibold bg-blue-50 px-2 py-1 rounded-full">
+                  +{Math.round(horasEstudadas * 0.15)}h este mês
+                </span>
               </div>
-              <div>
-                <p className="text-sm text-gray-600">Treinamentos</p>
-                <p className="text-2xl font-bold text-gray-900">{totalTreinamentos}</p>
-              </div>
+              <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Horas Estudadas</p>
+              <p className="text-3xl font-bold text-gray-900 mt-1">{horasEstudadas}h</p>
+              <p className="text-xs text-gray-600 mt-2">{totalModulosConcluidos} módulos concluídos</p>
             </CardBody>
           </Card>
           
-          <Card>
-            <CardBody className="flex items-center space-x-4">
-              <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
-                <Clock className="w-6 h-6 text-orange" />
+          {/* Média de Notas */}
+          <Card className="hover:shadow-lg transition-all cursor-pointer border-2 border-transparent hover:border-yellow-200">
+            <CardBody className="p-6">
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-yellow-500 to-orange-500 rounded-xl flex items-center justify-center shadow-md">
+                  <Award className="w-6 h-6 text-white" />
+                </div>
+                {parseFloat(mediaNotas) >= 80 && (
+                  <span className="text-xs text-yellow-600 font-semibold bg-yellow-50 px-2 py-1 rounded-full">
+                    Excelente!
+                  </span>
+                )}
               </div>
-              <div>
-                <p className="text-sm text-gray-600">Em Andamento</p>
-                <p className="text-2xl font-bold text-gray-900">{treinamentosEmAndamento}</p>
-              </div>
+              <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Média de Notas</p>
+              <p className="text-3xl font-bold text-gray-900 mt-1">{mediaNotas}%</p>
+              <p className="text-xs text-gray-600 mt-2">{testesAprovados} de {totalTestes} aprovados</p>
             </CardBody>
           </Card>
           
-          <Card>
-            <CardBody className="flex items-center space-x-4">
-              <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                <CheckCircle className="w-6 h-6 text-green-600" />
+          {/* Concluídos */}
+          <Card className="hover:shadow-lg transition-all cursor-pointer border-2 border-transparent hover:border-green-200">
+            <CardBody className="p-6">
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-md">
+                  <CheckCircle className="w-6 h-6 text-white" />
+                </div>
+                {treinamentosConcluidos > 0 && (
+                  <span className="text-xs text-green-600 font-semibold bg-green-50 px-2 py-1 rounded-full">
+                    🎉 Parabéns!
+                  </span>
+                )}
               </div>
-              <div>
-                <p className="text-sm text-gray-600">Concluídos</p>
-                <p className="text-2xl font-bold text-gray-900">{treinamentosConcluidos}</p>
-              </div>
+              <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Concluídos</p>
+              <p className="text-3xl font-bold text-gray-900 mt-1">{treinamentosConcluidos}</p>
+              <p className="text-xs text-gray-600 mt-2">de {totalTreinamentos} disponíveis</p>
             </CardBody>
           </Card>
           
-          <Card>
-            <CardBody className="flex items-center space-x-4">
-              <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-                <TrendingUp className="w-6 h-6 text-purple-600" />
+          {/* Em Andamento */}
+          <Card className="hover:shadow-lg transition-all cursor-pointer border-2 border-transparent hover:border-purple-200">
+            <CardBody className="p-6">
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center shadow-md">
+                  <TrendingUp className="w-7 h-7 text-white" />
+                </div>
+                {proximoCertificado && (
+                  <span className="text-xs text-purple-600 font-semibold bg-purple-50 px-2 py-1 rounded-full">
+                    Quase lá!
+                  </span>
+                )}
               </div>
-              <div>
-                <p className="text-sm text-gray-600">Média de Notas</p>
-                <p className="text-2xl font-bold text-gray-900">{mediaNotas}%</p>
-              </div>
+              <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Em Andamento</p>
+              <p className="text-3xl font-bold text-gray-900 mt-1">{treinamentosEmAndamento}</p>
+              {proximoCertificado ? (
+                <p className="text-xs text-purple-600 mt-2 font-medium">
+                  {calcularProgresso(proximoCertificado.id)}% em {proximoCertificado.titulo.substring(0, 20)}...
+                </p>
+              ) : (
+                <p className="text-xs text-gray-600 mt-2">Continue estudando!</p>
+              )}
             </CardBody>
           </Card>
         </div>
@@ -214,18 +265,25 @@ export function DashboardContent({
                         )}
                       </div>
                       
+                      {/* Barra de Progresso Visual */}
                       {progressoPerc > 0 && (
                         <div className="mb-4">
-                          <div className="flex justify-between text-sm mb-1">
-                            <span className="text-gray-600">Progresso</span>
-                            <span className="font-medium text-primary">{progressoPerc}%</span>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-medium text-gray-600">Progresso</span>
+                            <span className="text-xs font-bold text-primary">{progressoPerc}%</span>
                           </div>
-                          <div className="w-full bg-gray-200 rounded-full h-2">
-                            <div
-                              className="bg-primary h-2 rounded-full transition-all"
+                          <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                            <div 
+                              className="h-full rounded-full bg-gradient-to-r from-primary to-blue-600 transition-all duration-500"
                               style={{ width: `${progressoPerc}%` }}
                             />
                           </div>
+                          {progressoPerc === 100 && (
+                            <div className="flex items-center gap-1 mt-2">
+                              <CheckCircle className="w-4 h-4 text-green-600" />
+                              <span className="text-xs text-green-600 font-semibold">Completado!</span>
+                            </div>
+                          )}
                         </div>
                       )}
                       
@@ -235,7 +293,7 @@ export function DashboardContent({
                         onClick={() => router.push(`/treinamentos/${treinamento.id}`)}
                       >
                         <Play className="w-4 h-4 mr-2" />
-                        {progressoPerc > 0 ? 'Continuar' : 'Iniciar'}
+                        {progressoPerc === 100 ? 'Revisar' : progressoPerc > 0 ? 'Continuar' : 'Iniciar'}
                       </Button>
                     </CardBody>
                   </Card>

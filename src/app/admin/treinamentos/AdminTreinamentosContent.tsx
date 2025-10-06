@@ -17,7 +17,8 @@ import {
   BookOpen,
   Search,
   AlertCircle,
-  FileText
+  FileText,
+  Settings
 } from 'lucide-react'
 
 interface AdminTreinamentosContentProps {
@@ -278,8 +279,17 @@ export function AdminTreinamentosContent({ profile, treinamentos }: AdminTreinam
                         <Button
                           variant="outline"
                           size="sm"
+                          onClick={() => router.push(`/admin/treinamentos/${treinamento.id}/gerenciar`)}
+                          title="Gerenciar Módulos, Slides e Testes"
+                        >
+                          <Settings className="w-4 h-4" />
+                        </Button>
+                        
+                        <Button
+                          variant="outline"
+                          size="sm"
                           onClick={() => router.push(`/admin/treinamentos/${treinamento.id}/editar`)}
-                          title="Editar"
+                          title="Editar Dados Básicos"
                         >
                           <Edit className="w-4 h-4" />
                         </Button>

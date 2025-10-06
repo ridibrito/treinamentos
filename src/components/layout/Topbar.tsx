@@ -8,9 +8,9 @@ import { createClient } from '@/lib/supabase/client'
 import { 
   User,
   LogOut,
-  Settings,
   ChevronDown,
-  Menu
+  Menu,
+  Search
 } from 'lucide-react'
 
 interface TopbarProps {
@@ -26,7 +26,10 @@ interface TopbarProps {
 export function Topbar({ user, onToggleSidebar }: TopbarProps) {
   const router = useRouter()
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [buscaAberta, setBuscaAberta] = useState(false)
+  const [termoBusca, setTermoBusca] = useState('')
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const buscaRef = useRef<HTMLInputElement>(null)
   
   // Fechar dropdown ao clicar fora
   useEffect(() => {
@@ -46,6 +49,22 @@ export function Topbar({ user, onToggleSidebar }: TopbarProps) {
     router.push('/login')
     router.refresh()
   }
+  
+  const handleBusca = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (termoBusca.trim()) {
+      router.push(`/dashboard?busca=${encodeURIComponent(termoBusca)}`)
+      setBuscaAberta(false)
+      setTermoBusca('')
+    }
+  }
+  
+  // Focar input quando abre busca
+  useEffect(() => {
+    if (buscaAberta && buscaRef.current) {
+      buscaRef.current.focus()
+    }
+  }, [buscaAberta])
   
   const roleLabels = {
     admin: 'Administrador',
@@ -80,13 +99,21 @@ export function Topbar({ user, onToggleSidebar }: TopbarProps) {
         </div>
         
         {/* Título da página atual */}
-        <div className="flex-1 px-8">
-          <h1 className="text-2xl font-bold text-gray-900">
-            Bem-vindo de volta!
-          </h1>
-          <p className="text-sm text-gray-600">
-            Gerencie seus treinamentos e acompanhe seu progresso
-          </p>
+        {/* Busca Global */}
+        <div className="flex-1 px-8 flex items-center justify-center">
+          <div className="w-full max-w-md">
+            <form onSubmit={handleBusca} className="relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+              <input
+                ref={buscaRef}
+                type="text"
+                value={termoBusca}
+                onChange={(e) => setTermoBusca(e.target.value)}
+                placeholder="Buscar treinamentos... (Enter para buscar)"
+                className="w-full pl-12 pr-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary focus:border-primary text-sm transition-all shadow-sm hover:shadow-md"
+              />
+            </form>
+          </div>
         </div>
         
         {/* User Dropdown (Direita) */}
@@ -151,19 +178,6 @@ export function Topbar({ user, onToggleSidebar }: TopbarProps) {
                   <User className="w-4 h-4" />
                   <span>Meu Perfil</span>
                 </button>
-                
-                <button
-                  onClick={() => {
-                    setDropdownOpen(false)
-                    router.push('/configuracoes')
-                  }}
-                  className="w-full flex items-center space-x-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  <Settings className="w-4 h-4" />
-                  <span>Configurações</span>
-                </button>
-                
-                <div className="border-t border-border my-2"></div>
                 
                 <button
                   onClick={handleSignOut}
