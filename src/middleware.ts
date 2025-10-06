@@ -42,16 +42,11 @@ export async function middleware(request: NextRequest) {
 
     // Verifica sessão
     const { data: { session } } = await supabase.auth.getSession()
-    
-    // Debug (remover depois)
-    console.log('Path:', pathname, 'Has session:', !!session)
 
     // Página raiz - redireciona conforme autenticação
     if (pathname === '/') {
-      if (session) {
-        return NextResponse.redirect(new URL('/dashboard', request.url))
-      }
-      return NextResponse.redirect(new URL('/login', request.url))
+      const redirectUrl = session ? '/dashboard' : '/login'
+      return NextResponse.redirect(new URL(redirectUrl, request.url))
     }
 
     // Rotas públicas - redireciona para dashboard se já logado
