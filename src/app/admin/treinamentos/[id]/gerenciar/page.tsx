@@ -36,7 +36,7 @@ export default async function GerenciarTreinamentoPage({ params }: PageProps) {
       *,
       modulos:modulos(
         *,
-        slides:slides(count),
+        slides:slides(id, titulo, ordem, video_url),
         testes:testes(id, titulo)
       )
     `)

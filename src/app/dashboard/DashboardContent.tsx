@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { ContentCard } from '@/components/ui/ContentCard'
+import { ContentCarousel } from '@/components/ui/ContentCarousel'
 import { 
   BookOpen, 
   Clock, 
@@ -15,7 +17,6 @@ import {
   Search,
   Filter
 } from 'lucide-react'
-const MANUAL_VENDAS_URL = process.env.NEXT_PUBLIC_MANUAL_VENDAS_URL
 import { createClient } from '@/lib/supabase/client'
 
 interface DashboardContentProps {
@@ -35,8 +36,6 @@ export function DashboardContent({
   const searchParams = useSearchParams()
   const [filtroCategoria, setFiltroCategoria] = useState<string>('todas')
   const [busca, setBusca] = useState('')
-  const [manualUrl, setManualUrl] = useState<string | null>(MANUAL_VENDAS_URL || null)
-  const [manualUpdatedAt, setManualUpdatedAt] = useState<string | null>(null)
   
   // Ler busca da URL
   useEffect(() => {
@@ -46,21 +45,7 @@ export function DashboardContent({
     }
   }, [searchParams])
 
-  // Carregar URL do manual via config
-  useEffect(() => {
-    (async () => {
-      try {
-        const supabase = createClient()
-        const { data } = await supabase
-          .from('config')
-          .select('value, updated_at')
-          .eq('key', 'manual_vendas_url')
-          .single()
-        if (data?.value) setManualUrl(data.value)
-        if (data?.updated_at) setManualUpdatedAt(new Date(data.updated_at).toLocaleDateString('pt-BR'))
-      } catch {}
-    })()
-  }, [])
+  // (Manual de Vendas visível apenas na página de Gerenciar Treinamentos)
   
   // Calcular progresso por treinamento
   const calcularProgresso = (treinamentoId: string) => {
@@ -198,30 +183,7 @@ export function DashboardContent({
           </Card>
         </div>
 
-        {/* Manual de Vendas - Acesso Rápido */}
-        <div className="mb-8">
-          <Card>
-            <CardBody className="py-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <h3 className="text-base font-semibold text-gray-900">Manual de Vendas</h3>
-                  {manualUpdatedAt && (
-                    <span className="text-[11px] text-gray-500">Atualizado em {manualUpdatedAt}</span>
-                  )}
-                </div>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    if (manualUrl) window.open(manualUrl, '_blank')
-                    else alert('Manual não configurado. Faça upload em Admin > Treinamentos > Gerenciar (Manual de Vendas).')
-                  }}
-                >
-                  Baixar PDF
-                </Button>
-              </div>
-            </CardBody>
-          </Card>
-        </div>
+        {/* Manual de Vendas removido desta tela */}
 
         {/* Filtros e Busca */}
         <div className="mb-6 flex flex-col sm:flex-row gap-4">
@@ -252,12 +214,9 @@ export function DashboardContent({
           </div>
         </div>
         
-        {/* Lista de Treinamentos */}
+        {/* Lista de Treinamentos no padrão carrossel por categoria */}
         <div className="mb-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">
-            Treinamentos Disponíveis
-          </h2>
-          
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">Treinamentos Disponíveis</h2>
           {treinamentosFiltrados.length === 0 ? (
             <Card>
               <CardBody className="text-center py-12">
@@ -266,85 +225,38 @@ export function DashboardContent({
               </CardBody>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {treinamentosFiltrados.map((treinamento) => {
-                const progressoPerc = calcularProgresso(treinamento.id)
-                const modulosCount = treinamento.modulos?.[0]?.count || 0
-                
-                return (
-                  <Card key={treinamento.id} hover>
-                    {treinamento.imagem && (
-                      <div className="h-48 overflow-hidden rounded-t-xl">
-                        <img
-                          src={treinamento.imagem}
-                          alt={treinamento.titulo}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-                    )}
-                    <CardBody>
-                      <div className="mb-3">
-                        {treinamento.categoria && (
-                          <span className="inline-block px-3 py-1 bg-primary/10 text-primary text-xs font-medium rounded-full capitalize mb-3">
-                            {treinamento.categoria}
-                          </span>
-                        )}
-                        <h3 className="text-lg font-bold text-gray-900 mb-2">
-                          {treinamento.titulo}
-                        </h3>
-                        <p className="text-sm text-gray-600 line-clamp-2 mb-4">
-                          {treinamento.descricao || 'Sem descrição disponível'}
-                        </p>
-                      </div>
-                      
-                      <div className="flex items-center space-x-4 text-sm text-gray-600 mb-4">
-                        <div className="flex items-center space-x-1">
-                          <BookOpen className="w-4 h-4" />
-                          <span>{modulosCount} módulo{modulosCount !== 1 ? 's' : ''}</span>
-                        </div>
-                        {treinamento.duracao && (
-                          <div className="flex items-center space-x-1">
-                            <Clock className="w-4 h-4" />
-                            <span>{treinamento.duracao}</span>
-                          </div>
-                        )}
-                      </div>
-                      
-                      {/* Barra de Progresso Visual */}
-                      {progressoPerc > 0 && (
-                        <div className="mb-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-medium text-gray-600">Progresso</span>
-                            <span className="text-xs font-bold text-primary">{progressoPerc}%</span>
-                          </div>
-                          <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
-                            <div 
-                              className="h-full rounded-full bg-gradient-to-r from-primary to-blue-600 transition-all duration-500"
-                              style={{ width: `${progressoPerc}%` }}
-                            />
-                          </div>
-                          {progressoPerc === 100 && (
-                            <div className="flex items-center gap-1 mt-2">
-                              <CheckCircle className="w-4 h-4 text-green-600" />
-                              <span className="text-xs text-green-600 font-semibold">Completado!</span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      
-                      <Button
-                        variant={progressoPerc > 0 ? 'secondary' : 'primary'}
-                        fullWidth
-                        onClick={() => router.push(`/treinamentos/${treinamento.id}`)}
-                      >
-                        <Play className="w-4 h-4 mr-2" />
-                        {progressoPerc === 100 ? 'Revisar' : progressoPerc > 0 ? 'Continuar' : 'Iniciar'}
-                      </Button>
-                    </CardBody>
-                  </Card>
-                )
-              })}
-            </div>
+            (() => {
+              const grupos = Array.from(new Set(treinamentosFiltrados.map(t => t.categoria || 'Outros')))
+                .map(cat => ({
+                  categoria: cat as string,
+                  items: treinamentosFiltrados.filter(t => (t.categoria || 'Outros') === cat)
+                }))
+              return (
+                <div className="space-y-8">
+                  {grupos.map(grupo => (
+                    <ContentCarousel key={grupo.categoria} title={grupo.categoria}>
+                      {grupo.items.map((treinamento) => {
+                        const progressoPerc = calcularProgresso(treinamento.id)
+                        const modulosCount = treinamento.modulos?.[0]?.count || 0
+                        return (
+                          <ContentCard
+                            key={treinamento.id}
+                            image={treinamento.imagem}
+                            title={treinamento.titulo}
+                            subtitle={treinamento.descricao}
+                            metaLeft={`${modulosCount} aulas`}
+                            metaRight={treinamento.duracao || null}
+                            progressPercent={progressoPerc}
+                            actionLabel={progressoPerc === 100 ? 'Revisar' : progressoPerc > 0 ? 'Continuar' : 'Assistir'}
+                            onAction={() => router.push(`/treinamentos/${treinamento.id}`)}
+                          />
+                        )
+                      })}
+                    </ContentCarousel>
+                  ))}
+                </div>
+              )
+            })()
           )}
         </div>
         

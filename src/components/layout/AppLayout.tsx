@@ -2,6 +2,7 @@
 
 import { ReactNode, useState, useEffect } from 'react'
 import { Sidebar } from './Sidebar'
+import { ConfirmDialogProvider } from '@/components/ui/ConfirmDialog'
 import { Topbar } from './Topbar'
 
 interface AppLayoutProps {
@@ -27,6 +28,7 @@ export function AppLayout({ children, user }: AppLayoutProps) {
   }
   
   return (
+    <ConfirmDialogProvider>
     <div className="min-h-screen bg-soft-white">
       {/* Topbar - Fixo no topo com logo e botão toggle */}
       <Topbar user={user} onToggleSidebar={handleToggleSidebar} />
@@ -44,6 +46,7 @@ export function AppLayout({ children, user }: AppLayoutProps) {
         </div>
       </main>
     </div>
+    </ConfirmDialogProvider>
   )
 }
 

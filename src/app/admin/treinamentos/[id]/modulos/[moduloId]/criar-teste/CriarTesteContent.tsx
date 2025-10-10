@@ -18,7 +18,9 @@ import {
   XCircle,
   GripVertical,
   Clock,
-  Award
+  Award,
+  Sparkles,
+  Loader2
 } from 'lucide-react'
 
 interface CriarTesteContentProps {
@@ -61,6 +63,13 @@ export default function CriarTesteContent({
   const [notaMinima, setNotaMinima] = useState(70)
   const [questoes, setQuestoes] = useState<Questao[]>([])
   const [salvando, setSalvando] = useState(false)
+  const [iaOpen, setIaOpen] = useState(false)
+  const [iaFonte, setIaFonte] = useState<'apostila_html' | 'transcricao_video' | 'texto_livre'>('apostila_html')
+  const [iaTexto, setIaTexto] = useState('')
+  const [iaQuantidade, setIaQuantidade] = useState(8)
+  const [iaTipos, setIaTipos] = useState<{ multipla: boolean; vf: boolean; dissertativa: boolean }>({ multipla: true, vf: true, dissertativa: false })
+  const [iaNivel, setIaNivel] = useState<'basico' | 'intermediario' | 'avancado'>('intermediario')
+  const [iaLoading, setIaLoading] = useState(false)
   
   const handleAddQuestao = (tipo: TipoQuestao) => {
     const novaQuestao: Questao = {
@@ -118,6 +127,131 @@ export default function CriarTesteContent({
       }
       return q
     }))
+  }
+  
+  const handleGerarIA = async () => {
+    try {
+      if (iaFonte !== 'apostila_html' && !iaTexto.trim()) {
+        toast.warning('Conteúdo necessário', 'Cole o texto base para gerar as questões')
+        return
+      }
+      setIaLoading(true)
+      
+      let conteudoBase = ''
+      if (iaFonte === 'apostila_html') {
+        const supabase = createClient()
+        // Apostila ativa do treinamento
+        const { data: apostila } = await supabase
+          .from('apostilas')
+          .select('apresentacao')
+          .eq('treinamento_id', treinamentoId)
+          .eq('ativo', true)
+          .order('versao', { ascending: false })
+          .limit(1)
+          .single()
+        
+        // Slides do módulo
+        const { data: slides } = await supabase
+          .from('slides')
+          .select('titulo, conteudo')
+          .eq('modulo_id', modulo.id)
+          .order('ordem', { ascending: true })
+        
+        const parts: string[] = []
+        if (apostila?.apresentacao) {
+          parts.push(`<section><h2>Apostila</h2>${apostila.apresentacao}</section>\n`)
+        }
+        if (modulo.conteudo) {
+          parts.push(`<section><h2>Conteúdo do Módulo</h2>${modulo.conteudo}</section>\n`)
+        }
+        if (slides && slides.length > 0) {
+          parts.push('<section><h2>Slides</h2>')
+          for (const s of slides) {
+            const titulo = s.titulo ? `<h3>${s.titulo}</h3>` : ''
+            const html = s.conteudo || ''
+            parts.push(`<div class="slide">${titulo}${html}</div>`)
+          }
+          parts.push('</section>')
+        }
+        if (parts.length === 0) {
+          toast.warning('Sem conteúdo', 'Não há apostila, slides ou conteúdo no módulo para gerar questões')
+          setIaLoading(false)
+          return
+        }
+        conteudoBase = parts.join('\n')
+      } else {
+        conteudoBase = iaTexto.trim()
+      }
+      
+      const tiposArray: Array<'multipla' | 'vf' | 'dissertativa'> = []
+      if (iaTipos.multipla) tiposArray.push('multipla')
+      if (iaTipos.vf) tiposArray.push('vf')
+      if (iaTipos.dissertativa) tiposArray.push('dissertativa')
+      
+      const response = await fetch('/api/gemini/gerar-questoes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fonte: iaFonte,
+          conteudo: conteudoBase,
+          idioma: 'pt-BR',
+          quantidade: iaQuantidade,
+          tipos: tiposArray,
+          nivel: iaNivel,
+          contexto: {
+            treinamentoTitulo: modulo?.treinamentos?.titulo || '',
+            moduloTitulo: modulo?.titulo || ''
+          }
+        })
+      })
+      
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.message || data.error || 'Erro ao gerar questões')
+      }
+      
+      const data = await response.json()
+      const novasQuestoes = (data.questoes || []).map((q: any, idx: number) => {
+        const baseOrdem = questoes.length
+        const tipo = q.tipo as TipoQuestao
+        const alternativas = tipo === 'multipla'
+          ? (Array.isArray(q.alternativas) ? q.alternativas : [
+              { id: 'a', texto: '' },
+              { id: 'b', texto: '' },
+              { id: 'c', texto: '' },
+              { id: 'd', texto: '' }
+            ])
+          : tipo === 'vf'
+          ? [
+              { id: 'true', texto: 'Verdadeiro' },
+              { id: 'false', texto: 'Falso' }
+            ]
+          : []
+        
+        return {
+          id: Math.random().toString(36).substr(2, 9),
+          enunciado: String(q.enunciado || '').trim(),
+          tipo,
+          alternativas,
+          resposta_correta: String(q.resposta_correta || ''),
+          ordem: baseOrdem + idx + 1,
+          pontos: typeof q.pontos === 'number' && q.pontos > 0 ? q.pontos : 1.0
+        } as Questao
+      })
+      
+      if (!novasQuestoes.length) {
+        toast.warning('Nenhuma questão gerada', 'A IA não conseguiu criar questões com o conteúdo')
+      } else {
+        setQuestoes(prev => [...prev, ...novasQuestoes])
+        toast.success('Questões geradas!', `${novasQuestoes.length} adicionadas à lista`)
+        setIaOpen(false)
+      }
+    } catch (error: any) {
+      console.error('Erro IA:', error)
+      toast.error('Erro ao gerar', error.message)
+    } finally {
+      setIaLoading(false)
+    }
   }
   
   const handleSalvar = async () => {
@@ -302,6 +436,13 @@ export default function CriarTesteContent({
               </div>
               
               <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  onClick={() => setIaOpen(true)}
+                >
+                  <Sparkles className="w-4 h-4 mr-1" />
+                  Gerar com IA
+                </Button>
                 <Button
                   size="sm"
                   variant="secondary"
@@ -498,7 +639,113 @@ export default function CriarTesteContent({
             {salvando ? 'Salvando...' : 'Salvar Teste'}
           </Button>
         </div>
-      </div>
+        </div>
+        
+        {iaOpen && (
+          <div className="fixed inset-0 z-50">
+            <div className="absolute inset-0 bg-black/40" onClick={() => !iaLoading && setIaOpen(false)}></div>
+            <div className="absolute inset-0 flex items-center justify-center p-4">
+              <div className="w-full max-w-2xl bg-white rounded-xl shadow-xl border border-gray-200">
+                <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-primary" />
+                    <h3 className="text-lg font-semibold">Gerar questões com IA</h3>
+                  </div>
+                  <button
+                    className="text-gray-500 hover:text-gray-700"
+                    onClick={() => !iaLoading && setIaOpen(false)}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="p-6 space-y-5">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Fonte do conteúdo</label>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                      <label className={`flex items-center gap-2 border rounded-lg p-3 cursor-pointer ${iaFonte === 'apostila_html' ? 'border-primary bg-blue-50' : 'border-gray-300'}`}>
+                        <input type="radio" name="fonte" checked={iaFonte === 'apostila_html'} onChange={() => setIaFonte('apostila_html')} />
+                        <span>Apostila/Slides</span>
+                      </label>
+                      <label className={`flex items-center gap-2 border rounded-lg p-3 cursor-pointer ${iaFonte === 'transcricao_video' ? 'border-primary bg-blue-50' : 'border-gray-300'}`}>
+                        <input type="radio" name="fonte" checked={iaFonte === 'transcricao_video'} onChange={() => setIaFonte('transcricao_video')} />
+                        <span>Transcrição do Vídeo</span>
+                      </label>
+                      <label className={`flex items-center gap-2 border rounded-lg p-3 cursor-pointer ${iaFonte === 'texto_livre' ? 'border-primary bg-blue-50' : 'border-gray-300'}`}>
+                        <input type="radio" name="fonte" checked={iaFonte === 'texto_livre'} onChange={() => setIaFonte('texto_livre')} />
+                        <span>Texto livre</span>
+                      </label>
+                    </div>
+                    {iaFonte === 'apostila_html' && (
+                      <p className="text-xs text-gray-500 mt-2">Usaremos a apostila ativa, conteúdo do módulo e slides (quando existirem).</p>
+                    )}
+                  </div>
+                  {(iaFonte === 'transcricao_video' || iaFonte === 'texto_livre') && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        {iaFonte === 'transcricao_video' ? 'Cole a transcrição do vídeo' : 'Cole o conteúdo base'}
+                      </label>
+                      <textarea
+                        value={iaTexto}
+                        onChange={(e) => setIaTexto(e.target.value)}
+                        rows={6}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                        placeholder={iaFonte === 'transcricao_video' ? 'Cole aqui a transcrição do vídeo...' : 'Cole o conteúdo para gerar as questões...'}
+                      />
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Quantidade</label>
+                      <input
+                        type="number"
+                        min={3}
+                        max={25}
+                        value={iaQuantidade}
+                        onChange={(e) => setIaQuantidade(parseInt(e.target.value) || 8)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Nível</label>
+                      <select
+                        value={iaNivel}
+                        onChange={(e) => setIaNivel(e.target.value as any)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                      >
+                        <option value="basico">Básico</option>
+                        <option value="intermediario">Intermediário</option>
+                        <option value="avancado">Avançado</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Tipos</label>
+                      <div className="flex flex-wrap gap-3">
+                        <label className="flex items-center gap-2 text-sm">
+                          <input type="checkbox" checked={iaTipos.multipla} onChange={(e) => setIaTipos(v => ({ ...v, multipla: e.target.checked }))} />
+                          Múltipla
+                        </label>
+                        <label className="flex items-center gap-2 text-sm">
+                          <input type="checkbox" checked={iaTipos.vf} onChange={(e) => setIaTipos(v => ({ ...v, vf: e.target.checked }))} />
+                          V/F
+                        </label>
+                        <label className="flex items-center gap-2 text-sm">
+                          <input type="checkbox" checked={iaTipos.dissertativa} onChange={(e) => setIaTipos(v => ({ ...v, dissertativa: e.target.checked }))} />
+                          Dissertativa
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-end gap-2">
+                  <Button variant="secondary" onClick={() => setIaOpen(false)} disabled={iaLoading}>Cancelar</Button>
+                  <Button onClick={handleGerarIA} disabled={iaLoading || (!iaTipos.multipla && !iaTipos.vf && !iaTipos.dissertativa) || (iaFonte !== 'apostila_html' && !iaTexto.trim())}>
+                    {iaLoading ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" />Gerando...</>) : (<><Sparkles className="w-4 h-4 mr-2" />Gerar</>)}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
     </AppLayout>
   )
 }

@@ -152,12 +152,29 @@ export function FormTreinamento({ profile, treinamento, modulos = [] }: FormTrei
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <Input
-                  label="Categoria"
-                  value={formData.categoria}
-                  onChange={(e) => handleChange('categoria', e.target.value)}
-                  placeholder="Ex: Técnico, Comercial, etc."
-                />
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Tipo do Treinamento
+                  </label>
+                  <select
+                    value={formData.categoria}
+                    onChange={(e) => handleChange('categoria', e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-lg border border-border focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="">Selecione...</option>
+                    <option value="Comercial">Comercial</option>
+                    <option value="Técnico">Técnico</option>
+                    <option value="Operadora">Operadora</option>
+                    <option value="Produtos">Produtos</option>
+                    <option value="Atendimento">Atendimento</option>
+                    <option value="Onboarding">Onboarding</option>
+                    <option value="Marketing">Marketing</option>
+                    <option value="RH">RH</option>
+                    <option value="Financeiro">Financeiro</option>
+                    <option value="Compliance">Compliance</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">Ex.: Comercial, Técnico, Operadora…</p>
+                </div>
                 
                 <Input
                   label="Duração"
