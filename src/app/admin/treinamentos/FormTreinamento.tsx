@@ -13,9 +13,10 @@ import { ArrowLeft, Save } from 'lucide-react'
 interface FormTreinamentoProps {
   profile: any
   treinamento?: any
+  modulos?: { id: string; video_url?: string | null; ordem?: number }[]
 }
 
-export function FormTreinamento({ profile, treinamento }: FormTreinamentoProps) {
+export function FormTreinamento({ profile, treinamento, modulos = [] }: FormTreinamentoProps) {
   const router = useRouter()
   const toast = useToast()
   const [salvando, setSalvando] = useState(false)
@@ -28,6 +29,24 @@ export function FormTreinamento({ profile, treinamento }: FormTreinamentoProps) 
     tipo_conteudo: treinamento?.tipo_conteudo || 'slides' as 'slides' | 'video' | 'texto' | 'misto',
     ativo: treinamento?.ativo ?? true
   })
+
+  const extractYouTubeId = (url: string): string | null => {
+    try {
+      const u = new URL(url)
+      if (u.hostname.includes('youtu.be')) {
+        return u.pathname.split('/')[1] || null
+      }
+      if (u.searchParams.get('v')) {
+        return u.searchParams.get('v')
+      }
+      const path = u.pathname
+      const match = path.match(/\/embed\/([\w-]+)/) || path.match(/\/shorts\/([\w-]+)/)
+      if (match && match[1]) return match[1]
+      return null
+    } catch {
+      return null
+    }
+  }
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -37,12 +56,24 @@ export function FormTreinamento({ profile, treinamento }: FormTreinamentoProps) 
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
+
+      // Capa automática do YouTube se tipo=video e imagem vazia
+      let imagem = formData.imagem
+      if (!imagem && formData.tipo_conteudo === 'video' && modulos.length > 0) {
+        const primeiroVideo = modulos.find(m => !!m.video_url)
+        if (primeiroVideo?.video_url) {
+          const vid = extractYouTubeId(primeiroVideo.video_url)
+          if (vid) {
+            imagem = `https://img.youtube.com/vi/${vid}/maxresdefault.jpg`
+          }
+        }
+      }
       
       if (treinamento) {
         // Atualizar
         const { error } = await supabase
           .from('treinamentos')
-          .update(formData)
+          .update({ ...formData, imagem })
           .eq('id', treinamento.id)
         
         if (error) throw error
@@ -54,6 +85,7 @@ export function FormTreinamento({ profile, treinamento }: FormTreinamentoProps) 
           .from('treinamentos')
           .insert({
             ...formData,
+            imagem,
             created_by: user.id
           })
         
@@ -141,7 +173,7 @@ export function FormTreinamento({ profile, treinamento }: FormTreinamentoProps) 
                 value={formData.imagem}
                 onChange={(e) => handleChange('imagem', e.target.value)}
                 placeholder="https://exemplo.com/imagem.jpg"
-                helperText="Cole a URL de uma imagem para o treinamento"
+                helperText="Se vazio e for vídeo, usaremos automaticamente a miniatura do YouTube do primeiro módulo com vídeo"
               />
               
               <div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/components/ui/Toast'
@@ -9,6 +9,7 @@ import { Card, CardBody, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { User, Mail, Shield, Upload, Loader2, CheckCircle } from 'lucide-react'
+import { Award, KeyRound, ExternalLink } from 'lucide-react'
 
 interface PerfilContentProps {
   profile: any
@@ -21,6 +22,12 @@ export function PerfilContent({ profile: initialProfile }: PerfilContentProps) {
   const [nome, setNome] = useState(profile.nome)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [senhaAtual, setSenhaAtual] = useState('')
+  const [novaSenha, setNovaSenha] = useState('')
+  const [confirmarSenha, setConfirmarSenha] = useState('')
+  const [trocandoSenha, setTrocandoSenha] = useState(false)
+  const [certificados, setCertificados] = useState<any[] | null>(null)
+  const [loadingCerts, setLoadingCerts] = useState(true)
   
   const roleLabels = {
     admin: 'Administrador',
@@ -138,19 +145,59 @@ export function PerfilContent({ profile: initialProfile }: PerfilContentProps) {
       setSaving(false)
     }
   }
-  
+
+  // Carregar certificados do usuário
+  const handleLoadCertificados = async () => {
+    try {
+      const supabase = createClient()
+      const { data } = await supabase
+        .from('certificados')
+        .select(`id, codigo_validacao, data_emissao, treinamento_id, treinamentos:treinamentos(titulo)`)  
+        .order('data_emissao', { ascending: false })
+      setCertificados(data || [])
+    } catch (e) {
+      setCertificados([])
+    } finally { setLoadingCerts(false) }
+  }
+
+  useEffect(() => {
+    handleLoadCertificados()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Trocar senha
+  const handleTrocarSenha = async () => {
+    if (!novaSenha || novaSenha.length < 6) {
+      toast.warning('Senha fraca', 'A nova senha deve ter ao menos 6 caracteres')
+      return
+    }
+    if (novaSenha !== confirmarSenha) {
+      toast.error('Senhas diferentes', 'Confirme a nova senha corretamente')
+      return
+    }
+    setTrocandoSenha(true)
+    try {
+      const supabase = createClient()
+      // Se quiser validar a senha atual, seria necessário um fluxo de reautenticação (não suportado diretamente).
+      const { error } = await supabase.auth.updateUser({ password: novaSenha })
+      if (error) throw error
+      toast.success('Senha alterada!', 'Use a nova senha no próximo login')
+      setSenhaAtual(''); setNovaSenha(''); setConfirmarSenha('')
+    } catch (e: any) {
+      toast.error('Erro ao alterar senha', e.message || 'Tente novamente')
+    } finally {
+      setTrocandoSenha(false)
+    }
+  }
+ 
   return (
     <AppLayout user={profile}>
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-5xl mx-auto">
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">
-            Meu Perfil
-          </h2>
-          <p className="text-gray-600">
-          Gerencie suas informações pessoais e foto de perfil
-        </p>
-      </div>
-      
+          <h2 className="text-3xl font-bold text-gray-900 mb-2">Meu Perfil</h2>
+          <p className="text-gray-600">Gerencie suas informações, segurança e certificados</p>
+        </div>
+       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Card do Avatar */}
           <Card>
@@ -211,97 +258,95 @@ export function PerfilContent({ profile: initialProfile }: PerfilContentProps) {
             </CardBody>
           </Card>
           
-          {/* Card de Informações */}
+          {/* Card de Informações & Segurança */}
           <Card className="lg:col-span-2">
             <CardHeader>
-              <h3 className="text-lg font-bold text-gray-900">Informações Pessoais</h3>
+              <h3 className="text-lg font-bold text-gray-900">Informações e Segurança</h3>
             </CardHeader>
-            <CardBody className="space-y-6">
-              {/* Nome */}
+            <CardBody className="space-y-8">
+              {/* Seção: Dados Pessoais */}
               <div>
-                <Input
-                  label="Nome Completo"
-                  value={nome}
-                  onChange={(e) => setNome(e.target.value)}
-                  placeholder="Seu nome"
-                />
-              </div>
-              
-              {/* Email (somente leitura) */}
-              <div>
-                <label className="flex items-center space-x-2 text-sm font-medium text-gray-700 mb-1.5">
-                  <Mail className="w-4 h-4" />
-                  <span>E-mail</span>
-                </label>
-                <div className="px-4 py-2.5 bg-gray-100 rounded-lg border border-border text-gray-600">
-                  {profile.email}
+                <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><User className="w-4 h-4" /> Dados Pessoais</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <Input
+                      label="Nome Completo"
+                      value={nome}
+                      onChange={(e) => setNome(e.target.value)}
+                      placeholder="Seu nome"
+                    />
+                  </div>
+                  <div>
+                    <label className="flex items-center space-x-2 text-sm font-medium text-gray-700 mb-1.5">
+                      <Mail className="w-4 h-4" />
+                      <span>E-mail</span>
+                    </label>
+                    <div className="px-4 py-2.5 bg-gray-100 rounded-lg border border-border text-gray-600">
+                      {profile.email}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">O e-mail não pode ser alterado</p>
+                  </div>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  O e-mail não pode ser alterado
-                </p>
-              </div>
-              
-              {/* Perfil (somente leitura) */}
-              <div>
-                <label className="flex items-center space-x-2 text-sm font-medium text-gray-700 mb-1.5">
-                  <Shield className="w-4 h-4" />
-                  <span>Perfil de Acesso</span>
-                </label>
-                <div className="flex items-center space-x-2">
-                  <span className={`inline-block px-3 py-1.5 text-sm font-medium rounded-lg ${
-                    profile.role === 'admin' 
-                      ? 'bg-orange/10 text-orange border border-orange/20' 
-                      : profile.role === 'palestrante'
-                      ? 'bg-blue-100 text-blue-700 border border-blue-200'
-                      : 'bg-green-100 text-green-700 border border-green-200'
-                  }`}>
-                    {roleLabels[profile.role as keyof typeof roleLabels]}
-                  </span>
+                <div className="mt-4 flex items-center justify-between">
+                  <div className="text-xs text-gray-500">
+                    <span className="inline-flex items-center gap-2"><Shield className="w-3 h-3" /> Perfil: <strong className="ml-1">{roleLabels[profile.role as keyof typeof roleLabels]}</strong></span>
+                  </div>
+                  <Button variant="primary" onClick={handleSave} disabled={saving || nome === profile.nome}>
+                    {saving ? (<><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Salvando...</>) : (<><CheckCircle className="w-4 h-4 mr-2" /> Salvar</>)}
+                  </Button>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  Entre em contato com um administrador para alterar seu perfil
-                </p>
               </div>
-              
-              {/* Data de Cadastro */}
+              {/* Seção: Alterar Senha */}
               <div className="pt-4 border-t border-border">
-                <p className="text-sm text-gray-600">
-                  <strong>Membro desde:</strong>{' '}
-                  {new Date(profile.created_at).toLocaleDateString('pt-BR', { 
-                    day: 'numeric', 
-                    month: 'long', 
-                    year: 'numeric' 
-                  })}
-                </p>
+                <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><KeyRound className="w-4 h-4" /> Alterar Senha</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <Input type="password" label="Nova Senha" placeholder="Mínimo 6 caracteres" value={novaSenha} onChange={(e) => setNovaSenha(e.target.value)} />
+                  <Input type="password" label="Confirmar Nova Senha" value={confirmarSenha} onChange={(e) => setConfirmarSenha(e.target.value)} />
+                </div>
+                <div className="flex justify-end mt-3">
+                  <Button onClick={handleTrocarSenha} disabled={trocandoSenha}>
+                    {trocandoSenha ? 'Trocando...' : 'Atualizar Senha'}
+                  </Button>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Por segurança, você pode precisar entrar novamente após a troca.</p>
               </div>
-              
-              {/* Botões */}
-              <div className="flex justify-end space-x-3 pt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => router.back()}
-                >
-                  Cancelar
-                </Button>
-                
-                <Button
-                  variant="primary"
-                  onClick={handleSave}
-                  disabled={saving || nome === profile.nome}
-                >
-                  {saving ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Salvando...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle className="w-4 h-4 mr-2" />
-                      Salvar Alterações
-                    </>
-                  )}
-                </Button>
+            </CardBody>
+          </Card>
+          {/* Card de Certificados */}
+          <Card className="lg:col-span-3">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2"><Award className="w-4 h-4" /> Meus Certificados</h3>
+                <div className="text-sm text-gray-600">{(certificados?.length || 0)} emitidos</div>
               </div>
+            </CardHeader>
+            <CardBody>
+              {loadingCerts ? (
+                <div className="space-y-3">
+                  <div className="h-10 bg-gray-100 rounded animate-pulse" />
+                  <div className="h-10 bg-gray-100 rounded animate-pulse" />
+                  <div className="h-10 bg-gray-100 rounded animate-pulse" />
+                </div>
+              ) : certificados.length === 0 ? (
+                <div className="text-center py-10">
+                  <Award className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-600">Nenhum certificado emitido ainda</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-border">
+                  {certificados.map((c) => (
+                    <div key={c.id} className="flex items-center justify-between py-3">
+                      <div className="min-w-0">
+                        <p className="font-medium text-gray-900 truncate">{c.treinamentos?.titulo || 'Treinamento'}</p>
+                        <p className="text-xs text-gray-600 truncate">Código: {c.codigo_validacao} · Emitido em {new Date(c.data_emissao).toLocaleDateString('pt-BR')}</p>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={() => window.open(`/certificados/${c.treinamento_id}`, '_blank')}>
+                        <ExternalLink className="w-4 h-4 mr-1" /> Ver certificado
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardBody>
           </Card>
         </div>

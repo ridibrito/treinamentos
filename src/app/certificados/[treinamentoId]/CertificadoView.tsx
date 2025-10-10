@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { Download, Printer, ArrowLeft, Shield } from 'lucide-react'
 import { useRouter } from 'next/navigation'
@@ -12,9 +13,39 @@ interface CertificadoViewProps {
 
 export default function CertificadoView({ certificado, profile }: CertificadoViewProps) {
   const router = useRouter()
+  const [baixando, setBaixando] = useState(false)
   
   const handleImprimir = () => {
     window.print()
+  }
+
+  const handleBaixarPdf = async () => {
+    try {
+      setBaixando(true)
+      const res = await fetch(`/api/certificados/${certificado.treinamento_id}/pdf`, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Falha ao gerar PDF')
+      if (data.fallback) {
+        window.open(`/certificados/${certificado.treinamento_id}`, '_blank')
+        return
+      }
+      if (data.url) {
+        // Força download no mesmo gesto do usuário
+        const fileName = `certificado-${(certificado.treinamentos?.titulo || 'treinamento').toString().replace(/[^a-z0-9-_]+/gi, '_')}.pdf`
+        const link = document.createElement('a')
+        link.href = data.url
+        link.setAttribute('download', fileName)
+        link.rel = 'noopener'
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+      }
+    } catch (e) {
+      console.error(e)
+      alert('Não foi possível gerar o PDF agora. Tente novamente em instantes.')
+    } finally {
+      setBaixando(false)
+    }
   }
   
   return (
@@ -33,6 +64,14 @@ export default function CertificadoView({ certificado, profile }: CertificadoVie
             
             <div className="flex gap-3">
               <Button
+                variant="primary"
+                onClick={handleBaixarPdf}
+                disabled={baixando}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                {baixando ? 'Gerando...' : 'Baixar PDF'}
+              </Button>
+              <Button
                 variant="secondary"
                 onClick={handleImprimir}
               >
@@ -45,7 +84,7 @@ export default function CertificadoView({ certificado, profile }: CertificadoVie
       </div>
       
       {/* Certificado */}
-      <div className="certificado-container max-w-[1000px] mx-auto my-8 no-print">
+      <div className="certificado-container max-w-[1000px] mx-auto my-8">
         <div className="certificado bg-white shadow-2xl" style={{
           width: '297mm',
           minHeight: '210mm',

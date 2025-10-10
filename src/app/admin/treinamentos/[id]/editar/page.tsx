@@ -38,12 +38,19 @@ export default async function EditarTreinamentoPage({ params }: PageProps) {
   if (error || !treinamento) {
     notFound()
   }
-  
+
+  // Buscar módulos (para extrair capa automática do YouTube se necessário)
+  const { data: modulos } = await supabase
+    .from('modulos')
+    .select('id, video_url, ordem')
+    .eq('treinamento_id', id)
+    .order('ordem', { ascending: true })
+
   const profileWithEmail = {
     ...profile,
     email: user.email
   }
   
-  return <FormTreinamento profile={profileWithEmail} treinamento={treinamento} />
+  return <FormTreinamento profile={profileWithEmail} treinamento={treinamento} modulos={modulos || []} />
 }
 

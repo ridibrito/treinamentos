@@ -8,7 +8,10 @@ export function getEmbedUrl(url: string): string {
   const youtubeRegex = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\?\/]+)/
   const youtubeMatch = url.match(youtubeRegex)
   if (youtubeMatch) {
-    return `https://www.youtube.com/embed/${youtubeMatch[1]}`
+    const videoId = youtubeMatch[1]
+    const origin = typeof window !== 'undefined' ? encodeURIComponent(window.location.origin) : ''
+    const originParam = origin ? `&origin=${origin}` : ''
+    return `https://www.youtube.com/embed/${videoId}?enablejsapi=1&rel=0&modestbranding=1${originParam}`
   }
   
   // Vimeo

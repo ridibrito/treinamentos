@@ -1,12 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { Card, CardBody } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
-import { getEmbedUrl } from '@/lib/video-utils'
+import { getEmbedUrl, getVideoPlatform } from '@/lib/video-utils'
 import { 
   ArrowLeft,
   ArrowRight,
@@ -35,6 +35,10 @@ export function ModuloContent({
   const router = useRouter()
   const [slideAtual, setSlideAtual] = useState(0)
   const [marcandoConcluido, setMarcandoConcluido] = useState(false)
+  const playerRef = useRef<any>(null)
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+  const progressTimer = useRef<NodeJS.Timeout | null>(null)
+  const progressoIdRef = useRef<string | null>(progresso?.id || null)
   
   const slides = modulo.slides || []
   const totalSlides = slides.length
@@ -51,43 +55,197 @@ export function ModuloContent({
     }
   }
   
-  const handleMarcarConcluido = async () => {
-    setMarcandoConcluido(true)
+  const persistirProgresso = async (percentual: number, currentSeconds: number, durationSeconds: number) => {
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    try {
+      if (progressoIdRef.current) {
+        await supabase
+          .from('progresso_treinamento')
+          .update({ 
+            progresso_percentual: percentual,
+            video_segundos: currentSeconds,
+            video_duracao_segundos: durationSeconds
+          })
+          .eq('id', progressoIdRef.current)
+      } else {
+        const { data: inserted } = await supabase
+          .from('progresso_treinamento')
+          .insert({
+            user_id: user.id,
+            treinamento_id: modulo.treinamento_id,
+            modulo_id: modulo.id,
+            concluido: false,
+            progresso_percentual: percentual,
+            video_segundos: currentSeconds,
+            video_duracao_segundos: durationSeconds
+          })
+          .select('id')
+          .single()
+        if (inserted?.id) {
+          progressoIdRef.current = inserted.id
+        }
+      }
+    } catch (e) {
+      console.error('Falha ao salvar progresso:', e)
+    }
+  }
+  
+  // Tracking do YouTube via IFrame API
+  useEffect(() => {
+    if (!modulo.video_url || getVideoPlatform(modulo.video_url) !== 'youtube') return
+    
+    // Carrega a API se necessário
+    function ensureYT(onReady: () => void) {
+      // @ts-ignore
+      if (window.YT && window.YT.Player) return onReady()
+      const tag = document.createElement('script')
+      tag.src = 'https://www.youtube.com/iframe_api'
+      document.body.appendChild(tag)
+      // @ts-ignore
+      ;(window as any).onYouTubeIframeAPIReady = () => onReady()
+    }
+    
+    ensureYT(() => {
+      // @ts-ignore
+      const YT = window.YT
+      playerRef.current = new YT.Player(iframeRef.current, {
+        events: {
+          onReady: async () => {
+            // Retomar posição salva, se existir
+            const seg = Number(progresso?.video_segundos || 0)
+            const dur = Number(progresso?.video_duracao_segundos || 0)
+            if (seg > 0 && dur > 0) {
+              try {
+                // Tenta algumas vezes pois o player pode não aceitar imediatamente
+                let attempts = 0
+                const trySeek = () => {
+                  try {
+                    attempts++
+                    playerRef.current.seekTo(seg, true)
+                    // Opcional: pausar para mostrar a posição correta
+                    playerRef.current.pauseVideo?.()
+                  } catch {}
+                  if (attempts < 3) setTimeout(trySeek, 300)
+                }
+                trySeek()
+              } catch {}
+            }
+          },
+          onStateChange: async (event: any) => {
+            // Inicia timer de progresso quando estiver tocando
+            if (event.data === YT.PlayerState.PLAYING) {
+              if (progressTimer.current) clearInterval(progressTimer.current)
+              const tick = async () => {
+                try {
+                  const duration = playerRef.current.getDuration() || 0
+                  const current = playerRef.current.getCurrentTime() || 0
+                  if (duration > 0) {
+                    const percent = Math.min(100, Math.round((current / duration) * 100))
+                    await persistirProgresso(percent, current, duration)
+                    // Concluir automaticamente ao >= 90%
+                    if (percent >= 90 && !progresso?.concluido) {
+                      await handleMarcarConcluido(true)
+                    }
+                  }
+                } catch {}
+              }
+              progressTimer.current = setInterval(tick, 5000) // a cada 5s
+              // Executa um tick imediato ao começar
+              await tick()
+            } else if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
+              if (progressTimer.current) {
+                clearInterval(progressTimer.current)
+                progressTimer.current = null
+              }
+              // Salva um último tick ao pausar/terminar
+              try {
+                const duration = playerRef.current.getDuration() || 0
+                const current = playerRef.current.getCurrentTime() || 0
+                if (duration > 0) {
+                  const percent = Math.min(100, Math.round((current / duration) * 100))
+                  await persistirProgresso(percent, current, duration)
+                }
+              } catch {}
+              if (event.data === YT.PlayerState.ENDED && !progresso?.concluido) {
+                await handleMarcarConcluido(true)
+              }
+            }
+          }
+        }
+      })
+    })
+    
+    return () => {
+      if (progressTimer.current) clearInterval(progressTimer.current)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modulo.video_url])
+
+  // Salvar progresso ao ocultar a aba
+  useEffect(() => {
+    const onVisibility = async () => {
+      if (document.hidden || !playerRef.current) {
+        try {
+          const duration = playerRef.current.getDuration() || 0
+          const current = playerRef.current.getCurrentTime() || 0
+          if (duration > 0) {
+            const percent = Math.min(100, Math.round((current / duration) * 100))
+            await persistirProgresso(percent, current, duration)
+          }
+        } catch {}
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  
+  const handleMarcarConcluido = async (auto = false) => {
+    setMarcandoConcluido(!auto)
     const supabase = createClient()
     
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       
-      if (progresso) {
-        // Atualizar progresso existente
+      if (progressoIdRef.current) {
         await supabase
           .from('progresso_treinamento')
           .update({ 
             concluido: true,
-            data_conclusao: new Date().toISOString()
+            data_conclusao: new Date().toISOString(),
+            progresso_percentual: 100
           })
-          .eq('id', progresso.id)
+          .eq('id', progressoIdRef.current)
       } else {
-        // Criar novo progresso
-        await supabase
+        const { data: inserted } = await supabase
           .from('progresso_treinamento')
           .insert({
             user_id: user.id,
             treinamento_id: modulo.treinamento_id,
             modulo_id: modulo.id,
             concluido: true,
-            data_conclusao: new Date().toISOString()
+            data_conclusao: new Date().toISOString(),
+            progresso_percentual: 100
           })
+          .select('id')
+          .single()
+        if (inserted?.id) {
+          progressoIdRef.current = inserted.id
+        }
       }
       
-      // Se tem teste, redirecionar para o teste
-      if (teste) {
-        router.push(`/treinamentos/${modulo.treinamento_id}/modulos/${modulo.id}/teste`)
-      } else {
-        router.push(`/treinamentos/${modulo.treinamento_id}`)
+      if (!auto) {
+        // Se tem teste, redirecionar para o teste; senão volta ao treinamento
+        if (teste) {
+          router.push(`/treinamentos/${modulo.treinamento_id}/modulos/${modulo.id}/teste`)
+        } else {
+          router.push(`/treinamentos/${modulo.treinamento_id}`)
+        }
+        router.refresh()
       }
-      router.refresh()
     } catch (error) {
       console.error('Erro ao marcar como concluído:', error)
     } finally {
@@ -97,6 +255,7 @@ export function ModuloContent({
   
   const slideData = slides[slideAtual]
   const isConcluido = progresso?.concluido
+  const progressoPercentual = progresso?.progresso_percentual ?? 0
   
   return (
     <AppLayout user={profile}>
@@ -148,12 +307,6 @@ export function ModuloContent({
                       <span>Módulo concluído</span>
                     </div>
                   )}
-                  {teste && (
-                    <div className="flex items-center space-x-2 text-sm text-orange font-medium">
-                      <FileText className="w-4 h-4" />
-                      <span>Teste disponível</span>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
@@ -171,8 +324,20 @@ export function ModuloContent({
                 </h2>
               </div>
               
+              {/* Barra de progresso do vídeo */}
+              <div className="mb-3">
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className="bg-primary h-2 rounded-full transition-all"
+                    style={{ width: `${progressoPercentual}%` }}
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Assistido: {Math.round(progressoPercentual)}%</p>
+              </div>
+              
               <div className="aspect-video rounded-lg overflow-hidden bg-gray-900">
                 <iframe
+                  ref={iframeRef}
                   src={getEmbedUrl(modulo.video_url)}
                   className="w-full h-full"
                   allowFullScreen
@@ -180,17 +345,10 @@ export function ModuloContent({
                   title={modulo.titulo}
                 />
               </div>
-              
-              {modulo.video_duracao && (
-                <p className="text-sm text-gray-600 mt-3">
-                  <Clock className="w-4 h-4 inline mr-1" />
-                  Duração: {modulo.video_duracao} minutos
-                </p>
-              )}
             </CardBody>
           </Card>
         )}
-        
+
         {/* Conteúdo em Texto (se tiver) */}
         {modulo.conteudo && !modulo.video_url && totalSlides === 0 && (
           <Card className="mb-6">
@@ -202,7 +360,7 @@ export function ModuloContent({
             </CardBody>
           </Card>
         )}
-        
+
         {/* Conteúdo do Slide */}
         {totalSlides > 0 ? (
           <>
@@ -277,7 +435,7 @@ export function ModuloContent({
               {slideAtual === totalSlides - 1 ? (
                 <Button
                   variant="primary"
-                  onClick={handleMarcarConcluido}
+                  onClick={() => handleMarcarConcluido(false)}
                   disabled={marcandoConcluido}
                 >
                   {marcandoConcluido ? 'Salvando...' : (
@@ -299,7 +457,7 @@ export function ModuloContent({
             </div>
           </>
         ) : null}
-        
+
         {/* Botão de Concluir (se não tem slides ou já está no final) */}
         {(totalSlides === 0 && (modulo.video_url || modulo.conteudo)) && (
           <Card>
@@ -310,7 +468,7 @@ export function ModuloContent({
                 </p>
                 <Button
                   variant="primary"
-                  onClick={handleMarcarConcluido}
+                  onClick={() => handleMarcarConcluido(false)}
                   disabled={marcandoConcluido}
                 >
                   {marcandoConcluido ? 'Salvando...' : (
@@ -324,7 +482,7 @@ export function ModuloContent({
             </CardBody>
           </Card>
         )}
-        
+
         {/* Caso não tenha nenhum conteúdo */}
         {totalSlides === 0 && !modulo.video_url && !modulo.conteudo && (
           <Card>
@@ -334,7 +492,7 @@ export function ModuloContent({
               
               <Button
                 variant="primary"
-                onClick={handleMarcarConcluido}
+                onClick={() => handleMarcarConcluido(false)}
                 disabled={marcandoConcluido}
               >
                 {marcandoConcluido ? 'Salvando...' : 'Marcar como Concluído'}

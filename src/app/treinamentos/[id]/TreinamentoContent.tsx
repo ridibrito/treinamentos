@@ -15,7 +15,7 @@ import {
   Download,
   Award
 } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useToast } from '@/components/ui/Toast'
 
 interface TreinamentoContentProps {
@@ -35,14 +35,33 @@ export function TreinamentoContent({
   const toast = useToast()
   const [gerandoCertificado, setGerandoCertificado] = useState(false)
   
-  const isModuloConcluido = (moduloId: string) => {
-    return progresso.some(p => p.modulo_id === moduloId && p.concluido)
-  }
-  
-  const modulosConcluidos = progresso.filter(p => p.concluido).length
-  const totalModulos = treinamento.modulos.length
-  const progressoPerc = totalModulos > 0 ? Math.round((modulosConcluidos / totalModulos) * 100) : 0
-  const treinamentoConcluido = progressoPerc === 100
+  const progressoPorModulo = useMemo(() => {
+    const map = new Map<string, any>()
+    for (const p of (progresso || [])) {
+      map.set(p.modulo_id, p)
+    }
+    return map
+  }, [progresso])
+
+  const modulosConcluidos = useMemo(() => {
+    return (treinamento.modulos || []).filter((m: any) => progressoPorModulo.get(m.id)?.concluido).length
+  }, [treinamento.modulos, progressoPorModulo])
+
+  const totalModulos = (treinamento.modulos || []).length
+
+  // Progresso agregado: média dos módulos (concluído=100, em andamento usa progresso_percentual)
+  const progressoPerc = useMemo(() => {
+    if (totalModulos === 0) return 0
+    const soma = (treinamento.modulos || []).reduce((acc: number, m: any) => {
+      const p = progressoPorModulo.get(m.id)
+      if (p?.concluido) return acc + 100
+      const percent = typeof p?.progresso_percentual === 'number' ? Math.max(0, Math.min(100, p.progresso_percentual)) : 0
+      return acc + percent
+    }, 0)
+    return Math.round(soma / totalModulos)
+  }, [treinamento.modulos, progressoPorModulo, totalModulos])
+
+  const treinamentoConcluido = progressoPerc === 100 && totalModulos > 0
   
   const handleGerarCertificado = async () => {
     setGerandoCertificado(true)
@@ -217,7 +236,10 @@ export function TreinamentoContent({
           
           <div className="space-y-4">
             {treinamento.modulos.map((modulo: any, index: number) => {
-              const concluido = isModuloConcluido(modulo.id)
+              const prog = progressoPorModulo.get(modulo.id)
+              const concluido = !!prog?.concluido
+              const parcial = !concluido && typeof prog?.progresso_percentual === 'number' && prog.progresso_percentual > 0
+              const cta = concluido ? 'Revisar' : parcial ? 'Continuar' : 'Iniciar'
               const temTeste = modulo.testes && modulo.testes.length > 0
               
               return (
@@ -263,6 +285,11 @@ export function TreinamentoContent({
                                 ✓ Concluído
                               </span>
                             )}
+                            {!concluido && parcial && (
+                              <span className="text-primary font-medium">
+                                {Math.round(prog.progresso_percentual)}% assistido
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -272,7 +299,7 @@ export function TreinamentoContent({
                         onClick={() => router.push(`/treinamentos/${treinamento.id}/modulos/${modulo.id}`)}
                       >
                         <Play className="w-4 h-4 mr-2" />
-                        {concluido ? 'Revisar' : 'Iniciar'}
+                        {cta}
                       </Button>
                     </div>
                   </CardBody>

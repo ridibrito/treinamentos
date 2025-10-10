@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/components/ui/Toast'
@@ -18,7 +18,9 @@ import {
   Search,
   AlertCircle,
   FileText,
-  Settings
+  Settings,
+  MoreVertical,
+  Upload
 } from 'lucide-react'
 
 interface AdminTreinamentosContentProps {
@@ -33,6 +35,27 @@ export function AdminTreinamentosContent({ profile, treinamentos }: AdminTreinam
   const [busca, setBusca] = useState('')
   const [excluindo, setExcluindo] = useState<string | null>(null)
   const [alternando, setAlternando] = useState<string | null>(null)
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null)
+  // Manual de Vendas (global)
+  const [manualUrl, setManualUrl] = useState<string | null>(null)
+  const [uploadingManual, setUploadingManual] = useState(false)
+  const [selectedName, setSelectedName] = useState('')
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Carregar URL do manual (config)
+  useEffect(() => {
+    (async () => {
+      try {
+        const supabase = createClient()
+        const { data } = await supabase
+          .from('config')
+          .select('value')
+          .eq('key', 'manual_vendas_url')
+          .single()
+        if (data?.value) setManualUrl(data.value)
+      } catch {}
+    })()
+  }, [])
   
   const handleExcluir = async (id: string, titulo: string) => {
     const confirmado = await confirm.confirm({
@@ -161,7 +184,71 @@ export function AdminTreinamentosContent({ profile, treinamentos }: AdminTreinam
             </CardBody>
           </Card>
         </div>
-        
+
+        {/* Manual de Vendas (PDF) - seção fixa */}
+        <Card className="mb-8">
+          <CardBody className="py-4">
+            <div className="flex flex-col md:flex-row items-center md:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <h3 className="text-base font-semibold text-gray-900">Manual de Vendas</h3>
+                <span className="text-[11px] text-gray-500">PDF · máx 20MB</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {manualUrl && (
+                  <Button size="sm" variant="ghost" onClick={() => window.open(manualUrl!, '_blank')}>
+                    <FileText className="w-4 h-4 mr-2" /> Abrir
+                  </Button>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/pdf"
+                  disabled={uploadingManual}
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    setSelectedName(file.name)
+                    if (file.type !== 'application/pdf') { toast.error('Arquivo inválido', 'Envie um PDF.'); return }
+                    if (file.size > 20 * 1024 * 1024) { toast.error('Arquivo muito grande', 'Máximo 20MB.'); return }
+                    setUploadingManual(true)
+                    try {
+                      const supabase = createClient()
+                      const path = `manuais/manual-vendas-${Date.now()}.pdf`
+                      const { error: upErr } = await supabase.storage
+                        .from('apostilas')
+                        .upload(path, file, { contentType: 'application/pdf', upsert: true })
+                      if (upErr) throw upErr
+                      const { data: pub } = await supabase.storage
+                        .from('apostilas')
+                        .getPublicUrl(path)
+                      const { error: upsertErr } = await supabase
+                        .from('config')
+                        .upsert({ key: 'manual_vendas_url', value: pub.publicUrl }, { onConflict: 'key' })
+                      if (upsertErr) throw upsertErr
+                      setManualUrl(pub.publicUrl)
+                      toast.success('Manual atualizado!', 'PDF publicado.')
+                    } catch (err: any) {
+                      console.error(err)
+                      toast.error('Erro ao publicar manual', err.message || 'Tente novamente')
+                    } finally {
+                      setUploadingManual(false)
+                      setSelectedName('')
+                      if (fileInputRef.current) fileInputRef.current.value = ''
+                    }
+                  }}
+                />
+                <Button size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploadingManual}>
+                  <Upload className="w-4 h-4 mr-2" /> {uploadingManual ? 'Enviando...' : 'Enviar PDF'}
+                </Button>
+              </div>
+            </div>
+            {selectedName && (
+              <p className="text-[11px] text-gray-500 my-1">Selecionado: {selectedName}</p>
+            )}
+          </CardBody>
+        </Card>
+ 
         {/* Busca */}
         <div className="mb-6 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -243,66 +330,61 @@ export function AdminTreinamentosContent({ profile, treinamentos }: AdminTreinam
                         </div>
                       </div>
                       
-                      <div className="flex items-center space-x-2 ml-4">
+                      <div className="relative ml-4">
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleAlternarAtivo(treinamento.id, treinamento.ativo, treinamento.titulo)}
-                          disabled={alternando === treinamento.id}
-                          title={treinamento.ativo ? 'Desativar' : 'Ativar'}
+                          onClick={() => setMenuOpenId(menuOpenId === treinamento.id ? null : treinamento.id)}
+                          aria-haspopup="menu"
+                          aria-expanded={menuOpenId === treinamento.id}
+                          title="Mais ações"
                         >
-                          {treinamento.ativo ? (
-                            <EyeOff className="w-4 h-4" />
-                          ) : (
-                            <Eye className="w-4 h-4" />
-                          )}
+                          <MoreVertical className="w-4 h-4" />
                         </Button>
-                        
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => router.push(`/treinamentos/${treinamento.id}`)}
-                          title="Visualizar"
-                        >
-                          <BookOpen className="w-4 h-4" />
-                        </Button>
-                        
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => router.push(`/admin/treinamentos/${treinamento.id}/apostila`)}
-                          title="Editor de Apostila com IA"
-                        >
-                          <FileText className="w-4 h-4" />
-                        </Button>
-                        
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => router.push(`/admin/treinamentos/${treinamento.id}/gerenciar`)}
-                          title="Gerenciar Módulos, Slides e Testes"
-                        >
-                          <Settings className="w-4 h-4" />
-                        </Button>
-                        
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => router.push(`/admin/treinamentos/${treinamento.id}/editar`)}
-                          title="Editar Dados Básicos"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                        
-                        <Button
-                          variant="danger"
-                          size="sm"
-                          onClick={() => handleExcluir(treinamento.id, treinamento.titulo)}
-                          disabled={excluindo === treinamento.id}
-                          title="Excluir"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                        {menuOpenId === treinamento.id && (
+                          <div className="absolute right-0 mt-2 w-56 bg-white border border-border rounded-xl shadow-lg z-10 py-2">
+                            <button
+                              className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                              onClick={() => { setMenuOpenId(null); router.push(`/treinamentos/${treinamento.id}`) }}
+                            >
+                              <BookOpen className="w-4 h-4" /> Visualizar
+                            </button>
+                            <button
+                              className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                              onClick={() => { setMenuOpenId(null); router.push(`/admin/treinamentos/${treinamento.id}/apostila`) }}
+                            >
+                              <FileText className="w-4 h-4" /> Apostila (IA)
+                            </button>
+                            <button
+                              className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                              onClick={() => { setMenuOpenId(null); router.push(`/admin/treinamentos/${treinamento.id}/gerenciar`) }}
+                            >
+                              <Settings className="w-4 h-4" /> Gerenciar conteúdo
+                            </button>
+                            <button
+                              className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                              onClick={() => { setMenuOpenId(null); router.push(`/admin/treinamentos/${treinamento.id}/editar`) }}
+                            >
+                              <Edit className="w-4 h-4" /> Editar dados
+                            </button>
+                            <div className="my-2 h-px bg-gray-100" />
+                            <button
+                              className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                              onClick={() => { setMenuOpenId(null); handleAlternarAtivo(treinamento.id, treinamento.ativo, treinamento.titulo) }}
+                              disabled={alternando === treinamento.id}
+                            >
+                              {treinamento.ativo ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                              {treinamento.ativo ? 'Desativar' : 'Ativar'}
+                            </button>
+                            <button
+                              className="w-full flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                              onClick={() => { setMenuOpenId(null); handleExcluir(treinamento.id, treinamento.titulo) }}
+                              disabled={excluindo === treinamento.id}
+                            >
+                              <Trash2 className="w-4 h-4" /> Excluir
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </CardBody>

@@ -11,7 +11,7 @@ import { CheckCircle, Users, UserCog, GraduationCap, ChevronRight } from 'lucide
 import Link from 'next/link'
 import Image from 'next/image'
 
-type TipoPerfil = 'aluno' | 'palestrante' | 'admin' | null
+type TipoPerfil = 'aluno' | 'palestrante' | null
 
 export default function CadastroPage() {
   const router = useRouter()
@@ -200,43 +200,7 @@ export default function CadastroPage() {
             </Card>
             
             {/* Admin */}
-            <Card 
-              hover 
-              onClick={() => handleSelecionarTipo('admin')}
-              className="cursor-pointer border-2 border-transparent hover:border-purple-600 transition-all group"
-            >
-              <CardBody className="p-8 text-center">
-                <div className="w-20 h-20 bg-purple-100 rounded-full mx-auto mb-6 flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <UserCog className="w-10 h-10 text-purple-600" />
-                </div>
-                
-                <h3 className="text-2xl font-bold text-gray-900 mb-3">Administrador</h3>
-                
-                <p className="text-gray-600 mb-6 min-h-[60px]">
-                  Gerencie treinamentos, usuários e conteúdos da plataforma
-                </p>
-                
-                <ul className="text-left text-sm text-gray-600 space-y-2 mb-6">
-                  <li className="flex items-center">
-                    <CheckCircle className="w-4 h-4 text-green-600 mr-2 flex-shrink-0" />
-                    Criar treinamentos
-                  </li>
-                  <li className="flex items-center">
-                    <CheckCircle className="w-4 h-4 text-green-600 mr-2 flex-shrink-0" />
-                    Gerenciar usuários
-                  </li>
-                  <li className="flex items-center">
-                    <CheckCircle className="w-4 h-4 text-green-600 mr-2 flex-shrink-0" />
-                    Relatórios completos
-                  </li>
-                </ul>
-                
-                <Button fullWidth variant="secondary" className="group-hover:bg-purple-600 group-hover:text-white">
-                  Criar como Admin
-                  <ChevronRight className="w-4 h-4 ml-2" />
-                </Button>
-              </CardBody>
-            </Card>
+            {/* Card Admin removido do cadastro público */}
           </div>
           
           {/* Link para Login */}

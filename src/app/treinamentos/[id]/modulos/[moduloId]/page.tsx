@@ -60,13 +60,28 @@ export default async function ModuloPage({ params }: PageProps) {
     .eq('modulo_id', moduloId)
     .single()
   
-  // Buscar progresso
-  const { data: progresso } = await supabase
+  // Buscar progresso; se não existir, criar um registro (concluido=false)
+  let { data: progresso } = await supabase
     .from('progresso_treinamento')
     .select('*')
     .eq('user_id', user.id)
     .eq('modulo_id', moduloId)
     .single()
+
+  if (!progresso) {
+    const { data: novoProg } = await supabase
+      .from('progresso_treinamento')
+      .insert({
+        user_id: user.id,
+        treinamento_id: modulo.treinamento_id,
+        modulo_id: modulo.id,
+        concluido: false,
+        data_inicio: new Date().toISOString()
+      })
+      .select()
+      .single()
+    progresso = novoProg || null
+  }
   
   const profileWithEmail = {
     ...profile,

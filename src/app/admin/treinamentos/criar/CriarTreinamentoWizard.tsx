@@ -54,6 +54,8 @@ export function CriarTreinamentoWizard({ profile }: CriarTreinamentoWizardProps)
     tipo_conteudo: 'slides' as TipoConteudo,
     ativo: true
   })
+  const [capaFile, setCapaFile] = useState<File | null>(null)
+  const [capaPreview, setCapaPreview] = useState('')
   
   const [modulos, setModulos] = useState<Modulo[]>([])
   
@@ -83,6 +85,24 @@ export function CriarTreinamentoWizard({ profile }: CriarTreinamentoWizardProps)
       description: 'Combina slides, vídeos e textos'
     }
   ]
+  
+  const extractYouTubeId = (url: string): string | null => {
+    try {
+      const u = new URL(url)
+      if (u.hostname.includes('youtu.be')) {
+        return u.pathname.split('/')[1] || null
+      }
+      if (u.searchParams.get('v')) {
+        return u.searchParams.get('v')
+      }
+      const path = u.pathname
+      const match = path.match(/\/embed\/([\w-]+)/) || path.match(/\/shorts\/([\w-]+)/)
+      if (match && match[1]) return match[1]
+      return null
+    } catch {
+      return null
+    }
+  }
   
   const handleAddModulo = () => {
     const novoModulo: Modulo = {
@@ -131,11 +151,46 @@ export function CriarTreinamentoWizard({ profile }: CriarTreinamentoWizardProps)
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
       
+      // 0. Definir capa automática do YouTube se for vídeo e não houver imagem/capa enviada
+      let imagemUrl = dadosBasicos.imagem
+      if (!imagemUrl && !capaFile && dadosBasicos.tipo_conteudo === 'video') {
+        const primeiroVideo = modulos.find(m => !!m.video_url)
+        if (primeiroVideo?.video_url) {
+          const vid = extractYouTubeId(primeiroVideo.video_url)
+          if (vid) {
+            imagemUrl = `https://img.youtube.com/vi/${vid}/maxresdefault.jpg`
+          }
+        }
+      }
+      // Upload de capa (se houver arquivo)
+      if (capaFile) {
+        if (capaFile.size > 3 * 1024 * 1024) {
+          toast.error('Imagem muito grande', 'O arquivo deve ter no máximo 3MB')
+          setSalvando(false)
+          return
+        }
+        const ext = (capaFile.name.split('.').pop() || 'jpg').toLowerCase()
+        const filePath = `capas/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+        const { error: upErr } = await supabase.storage
+          .from('treinamentos-imagens')
+          .upload(filePath, capaFile, { cacheControl: '3600', upsert: false })
+        if (upErr) {
+          toast.error('Falha no upload', upErr.message)
+          setSalvando(false)
+          return
+        }
+        const { data: pub } = supabase.storage
+          .from('treinamentos-imagens')
+          .getPublicUrl(filePath)
+        imagemUrl = pub.publicUrl
+      }
+
       // 1. Criar treinamento
       const { data: treinamento, error: treinamentoError } = await supabase
         .from('treinamentos')
         .insert({
           ...dadosBasicos,
+          imagem: imagemUrl || null,
           created_by: user.id
         })
         .select()
@@ -273,6 +328,38 @@ export function CriarTreinamentoWizard({ profile }: CriarTreinamentoWizardProps)
                 placeholder="https://exemplo.com/imagem.jpg"
                 helperText="Cole a URL de uma imagem para o card do treinamento"
               />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Upload da Imagem de Capa (recomendado 1200x675)
+                </label>
+                <div className="flex items-start gap-4">
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] || null
+                      setCapaFile(file)
+                      if (file) {
+                        const url = URL.createObjectURL(file)
+                        setCapaPreview(url)
+                      } else {
+                        setCapaPreview('')
+                      }
+                    }}
+                    className="block w-full text-sm text-gray-600 file:mr-4 file:py-2.5 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-white hover:file:bg-primary-dark cursor-pointer"
+                  />
+                  {capaPreview && (
+                    <img
+                      src={capaPreview}
+                      alt="Prévia da capa"
+                      className="w-40 h-22 rounded-lg border border-border object-cover"
+                    />
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Formatos: JPG, PNG, WEBP. Tamanho ideal: 1200x675px (16:9). Máx. 3MB.
+                </p>
+              </div>
               
               <div className="flex justify-end pt-4">
                 <Button

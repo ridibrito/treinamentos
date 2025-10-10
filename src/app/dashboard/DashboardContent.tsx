@@ -15,6 +15,8 @@ import {
   Search,
   Filter
 } from 'lucide-react'
+const MANUAL_VENDAS_URL = process.env.NEXT_PUBLIC_MANUAL_VENDAS_URL
+import { createClient } from '@/lib/supabase/client'
 
 interface DashboardContentProps {
   profile: any
@@ -33,6 +35,8 @@ export function DashboardContent({
   const searchParams = useSearchParams()
   const [filtroCategoria, setFiltroCategoria] = useState<string>('todas')
   const [busca, setBusca] = useState('')
+  const [manualUrl, setManualUrl] = useState<string | null>(MANUAL_VENDAS_URL || null)
+  const [manualUpdatedAt, setManualUpdatedAt] = useState<string | null>(null)
   
   // Ler busca da URL
   useEffect(() => {
@@ -41,6 +45,22 @@ export function DashboardContent({
       setBusca(buscaURL)
     }
   }, [searchParams])
+
+  // Carregar URL do manual via config
+  useEffect(() => {
+    (async () => {
+      try {
+        const supabase = createClient()
+        const { data } = await supabase
+          .from('config')
+          .select('value, updated_at')
+          .eq('key', 'manual_vendas_url')
+          .single()
+        if (data?.value) setManualUrl(data.value)
+        if (data?.updated_at) setManualUpdatedAt(new Date(data.updated_at).toLocaleDateString('pt-BR'))
+      } catch {}
+    })()
+  }, [])
   
   // Calcular progresso por treinamento
   const calcularProgresso = (treinamentoId: string) => {
@@ -177,7 +197,32 @@ export function DashboardContent({
             </CardBody>
           </Card>
         </div>
-        
+
+        {/* Manual de Vendas - Acesso Rápido */}
+        <div className="mb-8">
+          <Card>
+            <CardBody className="py-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <h3 className="text-base font-semibold text-gray-900">Manual de Vendas</h3>
+                  {manualUpdatedAt && (
+                    <span className="text-[11px] text-gray-500">Atualizado em {manualUpdatedAt}</span>
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    if (manualUrl) window.open(manualUrl, '_blank')
+                    else alert('Manual não configurado. Faça upload em Admin > Treinamentos > Gerenciar (Manual de Vendas).')
+                  }}
+                >
+                  Baixar PDF
+                </Button>
+              </div>
+            </CardBody>
+          </Card>
+        </div>
+
         {/* Filtros e Busca */}
         <div className="mb-6 flex flex-col sm:flex-row gap-4">
           <div className="flex-1 relative">

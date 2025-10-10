@@ -14,10 +14,15 @@ import {
   BookOpen,
   Edit,
   UserCheck,
-  UserX
+  UserX,
+  KeyRound,
+  Trash2,
+  Plus
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import { useToast } from '@/components/ui/Toast'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 interface UsuariosContentProps {
   profile: any
@@ -35,6 +40,19 @@ export function UsuariosContent({
   const router = useRouter()
   const [busca, setBusca] = useState('')
   const [filtroRole, setFiltroRole] = useState<'todos' | 'admin' | 'palestrante' | 'aluno'>('todos')
+  const toast = useToast()
+  const { confirm } = useConfirm()
+
+  // Estados de modais
+  const [isAddOpen, setIsAddOpen] = useState(false)
+  const [newNome, setNewNome] = useState('')
+  const [newEmail, setNewEmail] = useState('')
+  const [newSenha, setNewSenha] = useState('')
+  const [newRole, setNewRole] = useState<'aluno' | 'palestrante' | 'admin'>('aluno')
+
+  const [editUserId, setEditUserId] = useState<string | null>(null)
+  const [editNome, setEditNome] = useState('')
+  const [editRole, setEditRole] = useState<'aluno' | 'palestrante' | 'admin'>('aluno')
   
   const roleLabels = {
     admin: 'Administrador',
@@ -132,8 +150,8 @@ export function UsuariosContent({
           </Card>
         </div>
         
-        {/* Filtros */}
-        <div className="mb-6 flex flex-col sm:flex-row gap-4">
+        {/* Filtros e Ações */}
+        <div className="mb-6 flex flex-col sm:flex-row gap-4 items-stretch sm:items-center">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
@@ -160,6 +178,13 @@ export function UsuariosContent({
               </button>
             ))}
           </div>
+
+          <div className="sm:ml-auto">
+            <Button onClick={() => setIsAddOpen(true)} className="whitespace-nowrap">
+              <Plus className="w-4 h-4 mr-2" />
+              Adicionar Usuário
+            </Button>
+          </div>
         </div>
         
         {/* Lista de Usuários */}
@@ -175,6 +200,7 @@ export function UsuariosContent({
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Testes</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Média</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cadastro</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -226,6 +252,69 @@ export function UsuariosContent({
                         <td className="px-6 py-4 text-sm text-gray-600">
                           {format(new Date(usuario.created_at), 'dd/MM/yyyy', { locale: ptBR })}
                         </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center justify-end space-x-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setEditUserId(usuario.id)
+                                setEditNome(usuario.nome)
+                                setEditRole(usuario.role)
+                              }}
+                            >
+                              <Edit className="w-4 h-4 mr-1" /> Editar
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={async () => {
+                                const senha = prompt('Digite a nova senha (mín. 6 caracteres)') || ''
+                                if (!senha || senha.length < 6) {
+                                  toast.warning('Senha inválida', 'Informe ao menos 6 caracteres')
+                                  return
+                                }
+                                const res = await fetch(`/api/admin/usuarios/${usuario.id}/senha`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ senha })
+                                })
+                                const data = await res.json()
+                                if (!res.ok) {
+                                  toast.error('Erro ao alterar senha', data.error || 'Tente novamente')
+                                } else {
+                                  toast.success('Senha alterada', 'Senha atualizada com sucesso')
+                                }
+                              }}
+                            >
+                              <KeyRound className="w-4 h-4 mr-1" /> Senha
+                            </Button>
+                            <Button
+                              variant="danger"
+                              size="sm"
+                              onClick={async () => {
+                                const ok = await confirm({
+                                  title: 'Excluir usuário?',
+                                  message: `Esta ação removerá permanentemente ${usuario.nome}.`,
+                                  variant: 'danger',
+                                  confirmText: 'Excluir',
+                                  cancelText: 'Cancelar'
+                                })
+                                if (!ok) return
+                                const res = await fetch(`/api/admin/usuarios/${usuario.id}`, { method: 'DELETE' })
+                                const data = await res.json()
+                                if (!res.ok) {
+                                  toast.error('Erro ao excluir', data.error || 'Tente novamente')
+                                } else {
+                                  toast.success('Usuário excluído', `${usuario.nome} foi removido`)
+                                  router.refresh()
+                                }
+                              }}
+                            >
+                              <Trash2 className="w-4 h-4 mr-1" /> Excluir
+                            </Button>
+                          </div>
+                        </td>
                       </tr>
                     )
                   })}
@@ -241,6 +330,107 @@ export function UsuariosContent({
             </div>
           </CardBody>
         </Card>
+
+        {/* Modal Adicionar Usuário */}
+        {isAddOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black/50" onClick={() => setIsAddOpen(false)} />
+            <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg">
+              <div className="p-6 border-b border-border">
+                <h3 className="text-lg font-bold text-gray-900">Adicionar Usuário</h3>
+              </div>
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
+                  <input className="w-full border border-border rounded-lg px-3 py-2" value={newNome} onChange={(e) => setNewNome(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">E-mail</label>
+                  <input className="w-full border border-border rounded-lg px-3 py-2" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Senha (temporária)</label>
+                  <input type="password" className="w-full border border-border rounded-lg px-3 py-2" value={newSenha} onChange={(e) => setNewSenha(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Perfil</label>
+                  <select className="w-full border border-border rounded-lg px-3 py-2" value={newRole} onChange={(e) => setNewRole(e.target.value as any)}>
+                    <option value="aluno">Aluno</option>
+                    <option value="palestrante">Palestrante</option>
+                    <option value="admin">Administrador</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-3 p-6 border-t border-border bg-gray-50 rounded-b-xl">
+                <Button variant="outline" onClick={() => setIsAddOpen(false)}>Cancelar</Button>
+                <Button onClick={async () => {
+                  if (!newNome || !newEmail) {
+                    toast.warning('Dados incompletos', 'Preencha nome e e-mail')
+                    return
+                  }
+                  const res = await fetch('/api/admin/usuarios', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nome: newNome, email: newEmail, role: newRole, senha: newSenha })
+                  })
+                  const data = await res.json()
+                  if (!res.ok) {
+                    toast.error('Erro ao criar usuário', data.error || 'Tente novamente')
+                  } else {
+                    toast.success('Usuário criado', 'Conta criada com sucesso')
+                    setIsAddOpen(false)
+                    setNewNome(''); setNewEmail(''); setNewSenha(''); setNewRole('aluno')
+                    router.refresh()
+                  }
+                }}>Criar</Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Editar Usuário */}
+        {editUserId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black/50" onClick={() => setEditUserId(null)} />
+            <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-lg">
+              <div className="p-6 border-b border-border">
+                <h3 className="text-lg font-bold text-gray-900">Editar Usuário</h3>
+              </div>
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Nome</label>
+                  <input className="w-full border border-border rounded-lg px-3 py-2" value={editNome} onChange={(e) => setEditNome(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Perfil</label>
+                  <select className="w-full border border-border rounded-lg px-3 py-2" value={editRole} onChange={(e) => setEditRole(e.target.value as any)}>
+                    <option value="aluno">Aluno</option>
+                    <option value="palestrante">Palestrante</option>
+                    <option value="admin">Administrador</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-3 p-6 border-t border-border bg-gray-50 rounded-b-xl">
+                <Button variant="outline" onClick={() => setEditUserId(null)}>Cancelar</Button>
+                <Button onClick={async () => {
+                  const res = await fetch(`/api/admin/usuarios/${editUserId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nome: editNome, role: editRole })
+                  })
+                  const data = await res.json()
+                  if (!res.ok) {
+                    toast.error('Erro ao salvar', data.error || 'Tente novamente')
+                  } else {
+                    toast.success('Alterações salvas', 'Usuário atualizado')
+                    setEditUserId(null)
+                    router.refresh()
+                  }
+                }}>Salvar</Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </AppLayout>
   )

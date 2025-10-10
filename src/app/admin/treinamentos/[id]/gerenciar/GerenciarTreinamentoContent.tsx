@@ -14,8 +14,12 @@ import {
   FileEdit,
   CheckCircle,
   XCircle,
-  Plus
+  Plus,
+  Upload
 } from 'lucide-react'
+import { createClient } from '@/lib/supabase/client'
+import { useState, useEffect, useRef } from 'react'
+import { useToast } from '@/components/ui/Toast'
 
 interface GerenciarTreinamentoContentProps {
   profile: any
@@ -27,6 +31,25 @@ export default function GerenciarTreinamentoContent({
   treinamento 
 }: GerenciarTreinamentoContentProps) {
   const router = useRouter()
+  const toast = useToast()
+  const [uploadingManual, setUploadingManual] = useState(false)
+  const [manualUrl, setManualUrl] = useState<string | null>(treinamento.manual_url || null)
+  const [selectedName, setSelectedName] = useState<string>('')
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+  // Carrega manual_vendas_url a partir de config
+  useEffect(() => {
+    (async () => {
+      try {
+        const supabase = createClient()
+        const { data } = await supabase
+          .from('config')
+          .select('value')
+          .eq('key', 'manual_vendas_url')
+          .single()
+        if (data?.value) setManualUrl(data.value)
+      } catch {}
+    })()
+  }, [])
   
   return (
     <AppLayout user={profile}>
@@ -89,7 +112,86 @@ export default function GerenciarTreinamentoContent({
             </div>
           </CardBody>
         </Card>
-        
+        {/* Manual de Vendas */}
+        <Card className="mb-6">
+          <CardHeader>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-3">
+                <h2 className="text-base font-semibold text-gray-900">Manual de Vendas</h2>
+                <span className="text-[11px] text-gray-500">PDF · máx 20MB</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {manualUrl && (
+                  <Button size="sm" variant="ghost" onClick={() => window.open(manualUrl!, '_blank')}>
+                    <FileText className="w-4 h-4 mr-2" /> Abrir
+                  </Button>
+                )}
+                <Button size="sm" onClick={() => fileInputRef.current?.click()} disabled={uploadingManual}>
+                  <Upload className="w-4 h-4 mr-2" /> {uploadingManual ? 'Enviando...' : 'Enviar PDF'}
+                </Button>
+              </div>
+            </div>
+            <p className="text-[11px] text-gray-500 my-1">PDF · máx 20MB {selectedName && `· ${selectedName}`}</p>
+          </CardHeader>
+          <CardBody className="space-y-2 py-4">
+            <div className="flex items-center gap-3">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf"
+                disabled={uploadingManual}
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  setSelectedName(file.name)
+                  if (file.type !== 'application/pdf') {
+                    toast.error('Arquivo inválido', 'Envie um PDF.')
+                    return
+                  }
+                  if (file.size > 20 * 1024 * 1024) {
+                    toast.error('Arquivo muito grande', 'Tamanho máximo: 20MB.')
+                    return
+                  }
+                  setUploadingManual(true)
+                  try {
+                    const supabase = createClient()
+                    const path = `manuais/manual-vendas-${treinamento.id}-${Date.now()}.pdf`
+                    const { error: upErr } = await supabase.storage
+                      .from('apostilas')
+                      .upload(path, file, { contentType: 'application/pdf', upsert: true })
+                    if (upErr) throw upErr
+                    const { data: pub } = await supabase.storage
+                      .from('apostilas')
+                      .getPublicUrl(path)
+                    // Salvar no config (key manual_vendas_url)
+                    const { error: upsertErr } = await supabase
+                      .from('config')
+                      .upsert({ key: 'manual_vendas_url', value: pub.publicUrl }, { onConflict: 'key' })
+                    if (upsertErr) throw upsertErr
+                    setManualUrl(pub.publicUrl)
+                    toast.success('Manual atualizado!', 'PDF publicado.')
+                    router.refresh()
+                  } catch (err: any) {
+                    console.error(err)
+                    toast.error('Erro ao enviar manual', err.message || 'Tente novamente')
+                  } finally {
+                    setUploadingManual(false)
+                    setSelectedName('')
+                    if (fileInputRef.current) fileInputRef.current.value = ''
+                  }
+                }}
+              />
+              {!manualUrl && (
+                <span className="text-xs text-gray-500">Nenhum manual publicado.</span>
+              )}
+            </div>
+            {manualUrl && (
+              <p className="text-[11px] text-gray-500">Atual: <a className="text-primary underline" href={manualUrl} target="_blank" rel="noreferrer">abrir</a></p>
+            )}
+          </CardBody>
+        </Card>
+
         {/* Módulos */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-4">

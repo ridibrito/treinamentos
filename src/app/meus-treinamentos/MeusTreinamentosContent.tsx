@@ -23,7 +23,7 @@ export function MeusTreinamentosContent({ profile, treinamentos }: MeusTreinamen
   const router = useRouter()
   
   const treinamentosEmAndamento = treinamentos.filter(
-    t => t.modulosConcluidos > 0 && t.modulosConcluidos < t.modulos.length
+    t => t.modulos.length > 0 && t.modulosConcluidos < t.modulos.length
   )
   
   const treinamentosConcluidos = treinamentos.filter(
@@ -51,9 +51,12 @@ export function MeusTreinamentosContent({ profile, treinamentos }: MeusTreinamen
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {treinamentosEmAndamento.map((item) => {
-                const progressoPerc = Math.round(
-                  (item.modulosConcluidos / item.modulos.length) * 100
-                )
+                const progressoAcumulado = item.modulos.reduce((acc: number, m: any) => {
+                  if (m.concluido) return acc + 1
+                  const p = typeof m.progresso_percentual === 'number' ? m.progresso_percentual : 0
+                  return acc + (p / 100)
+                }, 0)
+                const progressoPerc = Math.max(0, Math.min(100, Math.round((progressoAcumulado / item.modulos.length) * 100)))
                 const ultimoAcesso = item.modulos.sort(
                   (a: any, b: any) => 
                     new Date(b.data_inicio).getTime() - new Date(a.data_inicio).getTime()
